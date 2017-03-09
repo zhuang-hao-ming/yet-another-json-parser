@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "json.h"
-
+#include <string.h>/*memcmp*/
 static int test_count = 0;
 static int test_pass = 0;
 static int main_ret = 0;
@@ -32,6 +32,20 @@ static int main_ret = 0;
 
 #define EXPECT_EQ_INT(expect, actual) EXPECT_EQ((expect) == (actual), expect, actual, "%d")
 #define EXPECT_EQ_DOUBLE(expect, actual) EXPECT_EQ((expect) == (actual), expect, actual, "%f")
+
+#define EXPECT_EQ_STRING(expect, actual, alength) \
+		EXPECT_EQ(sizeof(expect) - 1 == alength && memcmp(expect, actual, alength) == 0, expect, actual, "%s")
+
+
+#define TEST_STRING(expect, json)\
+	do {\
+		json_node node;\
+		EXPECT_EQ_INT(JSON_PARSE_OK, json_parse(&node, json));\
+		EXPECT_EQ_INT(JSON_STRING, json_get_type(&node));\
+		EXPECT_EQ_STRING(expect, json_get_string(&node), json_get_string_length(&node));\
+		json_free(&node);\
+	} while(0)
+
 
 #define TEST_NUMBER(expect, json)\
 	do {\
@@ -119,6 +133,53 @@ static void test_parse_true() {
 }
 
 
+
+static void test_parse_string() {
+	TEST_STRING("haoming", "\"haoming\"");	
+	TEST_STRING("", "\"\"");
+	TEST_STRING("Hello\nWorld", "\"Hello\\nWorld\"");
+    TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
+}
+
+static void test_parse_invalid_string_escape() {
+	
+    TEST_ERROR(JSON_PARSE_INVALID_STRING_ESCAPE, "\"\\'\"");
+    TEST_ERROR(JSON_PARSE_INVALID_STRING_ESCAPE, "\"\\0\"");
+    TEST_ERROR(JSON_PARSE_INVALID_STRING_ESCAPE, "\"\\x12\"");
+}
+
+static void test_parse_invalid_string_char() {
+	TEST_ERROR(LEPT_PARSE_INVALID_STRING_CHAR, "\"\x01\"");
+}
+
+static void test_access_string() {
+	json_node node;
+	json_init(&node);
+	json_set_string(&node, "", 0);
+	EXPECT_EQ_STRING("", json_get_string(&node), json_get_string_length(&node));
+	json_set_string(&node, "hello", 5);
+	EXPECT_EQ_STRING("hello", json_get_string(&node), json_get_string_length(&node));
+	json_free(&node);
+}
+
+static void test_access_number() {
+	json_node node;
+	json_init(&node);
+	json_set_number(&node, 120.1);
+	EXPECT_EQ_DOUBLE(120.1, json_get_number(&node));
+}
+
+static void test_access_boolean() {
+	json_node node;
+	json_init(&node);
+	json_set_string(&node, "", 0);
+	json_set_boolean(&node, 1);
+	EXPECT_EQ_INT(1, json_get_boolean(&node));
+}
+
+
+
+
 static void test_parse() {
 	test_parse_expect_value();
 	test_parse_invalid();
@@ -127,15 +188,25 @@ static void test_parse() {
 	test_parse_null();
 	test_parse_false();
 	test_parse_true();
+	
 
 	test_parse_number();
 	test_parse_number_too_big();
+
+	test_parse_string();
+	test_parse_invalid_string_char();
+	test_parse_invalid_string_escape();
+
+	test_access_string();
+	test_access_number();
+	test_access_boolean();
 }
 
 
 int main() {
 	
 	test_parse();
+
 	printf("%d/%d (%3.2f%%) passed\n", test_pass, test_count, test_pass * 100.0 / test_count);				
 	return main_ret;
 }
