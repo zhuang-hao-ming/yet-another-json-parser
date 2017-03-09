@@ -1,1 +1,0 @@
-/usr/bin/cc     CMakeFiles/json_test.dir/test.c.o CMakeFiles/json_test.dir/json.c.o  -o json_test 

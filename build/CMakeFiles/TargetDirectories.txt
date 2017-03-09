@@ -1,3 +1,0 @@
-/home/haoming/test/json-parser/build/CMakeFiles/edit_cache.dir
-/home/haoming/test/json-parser/build/CMakeFiles/rebuild_cache.dir
-/home/haoming/test/json-parser/build/CMakeFiles/json_test.dir
