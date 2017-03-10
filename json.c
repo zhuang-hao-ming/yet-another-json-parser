@@ -119,9 +119,57 @@ static void* json_context_pop(json_context* c, size_t size) {
 
 #define PUTC(c, ch) do { *(char*)(json_context_push(c, sizeof(char))) = (ch); } while(0)
 
+/*从p中读取四个16进制字符,解析出一个无符号整数码点*/
+static const char* json_parse_hex4(const char* p, unsigned* u) {
+	*u = 0;
+	for (int i = 0; i < 4; i++) {
+		*u <<= 4;
+		char ch = *p++;
+		if (ch >= '0' && ch <= '9') {
+			*u |= ch - '0';
+		} else if (ch >= 'a' && ch <= 'f') {
+			*u |= ch - 'a' + 10;
+		} else if (ch >= 'A' && ch <= 'F') {
+			*u |= ch - 'A' + 10;
+		} else {
+			return NULL;
+		}		
+	}
+	return p;	
+}
+/**
+把unicode码点转换为utf-8
+*/
+static void json_encode_utf8(json_context* c, unsigned u) {
+	if (u <= 0x7f) {/*127个字符 00000000-01111111*/
+		/*一个字节*/
+		PUTC(c, u & 0xff);/*取出低8位作为一个字节*/
+	}
+	else if (u <= 0x7ff) {/*两个字节 110x xxxx 10xx xxxx*/
+		PUTC(c, 0xc0 | ((u >> 6) & 0xff));/*取从最低位开始的第6位到10位, 所以先右移动6位, 再取低5位, 但由于,高位都是0所以直接用0xff来取*/
+		PUTC(c, 0x80 | (u & 0x3f));/*取低6位*/
+	}
+	else if (u <= 0xffff) {/* 1110 xxxx 10xx xxxx 10xx xxxx */
+		PUTC(c, 0xe0 | ((u >> 12) & 0xff));
+		PUTC(c, 0x80 | ((u >> 6) & 0x3f));
+		PUTC(c, 0x80 | (u & 0x3f));
+	}
+	else {
+		assert(u <= 0x10ffff);
+		/* 1111 0xxx 10xx xxxx 10xx xxxx 10xx xxxx */
+		PUTC(c, 0xf0 | ((u >> 18) & 0xff));
+		PUTC(c, 0x80 | ((u >> 12) & 0x03f));
+		PUTC(c, 0x80 | ((u >> 6) & 0x3f));
+		PUTC(c, 0x80 | (u & 0x3f));
+	}
+}
+
+
 static int json_parse_string(json_context* c, json_node* node) {
 	size_t head = c->top;
 	size_t len;
+	unsigned u;
+	unsigned u2;
 	EXPECT(c, '\"');
 	const char* p = c->json;
 	for(;;) {
@@ -143,6 +191,34 @@ static int json_parse_string(json_context* c, json_node* node) {
 					case '\\': PUTC(c, '\\'); break;
 					case '/': PUTC(c, '/'); break;
 					case '\"': PUTC(c, '\"'); break;
+					case 'u': 
+						p = json_parse_hex4(p, &u);
+						if (p == NULL) {
+							c->top = head;
+							return JSON_PARSE_INVALID_UNICODE_HEX;
+						}
+						if (u >= 0xD800 && u<= 0xDBFF) {/*BMP的保留字符*/
+							if(*p++ != '\\') {
+								c->top = head;
+								return JSON_PARSE_UNICODE_SURROGATE;
+							}
+							if (*p++ != 'u') {
+								c->top = head;
+								return JSON_PARSE_UNICODE_SURROGATE;
+							}
+							p = json_parse_hex4(p, &u2);
+							if (p == NULL) {
+								c->top = head;
+								return JSON_PARSE_INVALID_UNICODE_HEX;
+							}
+							if (u2 < 0xDC00 || u2 > 0xDFFFF) {
+								c->top = head;
+								return JSON_PARSE_INVALID_UNICODE_HEX;
+							}
+							u = (((u - 0xD800) << 10 ) | (u2 - 0xDC00)) + 0x10000;
+						}
+						json_encode_utf8(c, u);
+						break;
 					default:
 						c->top = head;
 						return JSON_PARSE_INVALID_STRING_ESCAPE;					
